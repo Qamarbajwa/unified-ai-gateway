@@ -1069,6 +1069,776 @@ Required for agents processing personal data (GDPR Article 28):
 
 ---
 
-*Research completed June 2, 2026. All data verified via 5 parallel research agents. Sources: NVIDIA GTC 2026, nvidia.com, intercom.com, fin.ai, zendesk.com, finops.org, genai.owasp.org, atlas.mitre.org, nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf, modelcontextprotocol.io, google.github.io/A2A, github.com/BerriAI/litellm, konghq.com, portkey.ai, agentgateway.dev, kgateway.dev, tensorzero.com, getbifrost.ai, openrouter.ai, snyk.io, bitsight.com, cycode.com, truesec.com, wiz.io, paloaltonetworks.com/prisma, opentelemetry.io, registry.modelcontextprotocol.io, c2pa.org, icml.cc 2025, neurips.cc 2024.*
+---
+
+## PART 14: LOCAL DEVELOPMENT INTELLIGENCE LAYER (SELF-HEALING TRACK)
+
+> This part extends the GaaS vision with a **Track C** — a closed-loop system where the gateway actively monitors, diagnoses, and heals the projects it serves. When you point the system at a project directory, it auto-discovers the API surface, monitors health in real-time, creates actionable documentation from crashes and resource anomalies, and dispatches fixes back to the IDE.
+
+### 14.1 The Three Feedback Loops
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                    DEVELOPER WORKSTATION (256GB)                     │
+│                                                                      │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                          │
+│  │ Project A │  │ Project B │  │ Project C │  ← 50+ apps             │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘                          │
+│       │              │              │                                │
+│  ┌────▼──────────────▼──────────────▼──────────────┐                │
+│  │          LOCAL SENTINEL AGENT (IDE Plugin)        │                │
+│  │                                                   │                │
+│  │  LOOP 1: PROJECT DISCOVERY                        │                │
+│  │  • AST scan → API surface map                     │                │
+│  │  • Manifest analysis → dependency graph            │                │
+│  │  • Auto-generate integration config               │                │
+│  │                                                   │                │
+│  │  LOOP 2: HEALTH TELEMETRY                         │                │
+│  │  • Crash capture → stack traces + breadcrumbs      │                │
+│  │  • RAM/CPU/GPU monitoring (per-process)             │                │
+│  │  • Extension performance profiling                 │                │
+│  │                                                   │                │
+│  │  LOOP 3: SELF-HEALING                             │                │
+│  │  • Receive fix instructions from server            │                │
+│  │  • Apply patches via IDE automation                │                │
+│  │  • Publish new release / commit fix                │                │
+│  └────────────────────┬──────────────────────────────┘                │
+│                       │                                               │
+└───────────────────────┼───────────────────────────────────────────────┘
+                        │ (telemetry up ↑ / fixes down ↓)
+                        │ WebSocket + MCP over Streamable HTTP
+                        ▼
+              ┌──────────────────────────────────────┐
+              │      CENTRAL GaaS INTELLIGENCE HUB    │
+              │                                        │
+              │  • Ingests telemetry from all machines  │
+              │  • AI-powered root cause analysis       │
+              │  • Auto-generates issue documentation   │
+              │  • Determines corrective action          │
+              │  • Dispatches fix back to IDE agent      │
+              │  • Quality score tracking over time      │
+              └──────────────────────────────────────┘
+```
+
+### 14.2 Loop 1 — Project Auto-Discovery (Point & Understand)
+
+**The Problem:** You create a new project with AI assistance. The gateway needs to understand how this project communicates — its API endpoints, protocols, dependencies — without you manually writing integration specs.
+
+**Solution: AST-Based API Surface Scanner**
+
+The Local Sentinel Agent scans the project directory and builds a **Project API Manifest** automatically.
+
+**Discovery Pipeline:**
+
+| Step | Tool / Technique | What It Finds |
+|------|-----------------|---------------|
+| 1. Language Detection | File extension + `package.json` / `requirements.txt` / `Cargo.toml` / `go.mod` | Tech stack (Node.js, Python, Rust, Go, etc.) |
+| 2. AST Parsing | **tree-sitter** (universal, 40+ languages) | Function signatures, class hierarchies, exported symbols |
+| 3. Route Extraction | AST pattern matching on framework decorators | REST endpoints (`@app.get("/api/users")`), GraphQL resolvers, gRPC service definitions |
+| 4. Schema Detection | File glob: `*.proto`, `*.graphql`, `schema.prisma`, `*.openapi.yaml` | Protocol buffer definitions, GraphQL schemas, database models |
+| 5. Dependency Graph | `package.json`, `requirements.txt`, `go.mod`, lockfiles | Direct + transitive dependencies; known vulnerability cross-reference |
+| 6. Inter-Service Comms | AST scan for HTTP client calls, WebSocket connections, message queue publishers | How this project talks to other services |
+| 7. Env Var Analysis | `.env.example`, `docker-compose.yml`, config files | Required configuration; port bindings; external service URLs |
+
+**tree-sitter for Universal AST Parsing (verified — tree-sitter.github.io):**
+```python
+# Example: Extract all Express.js route definitions from a Node.js project
+import tree_sitter_javascript as tsjs
+from tree_sitter import Language, Parser
+
+parser = Parser(Language(tsjs.language()))
+
+# Parse source file
+with open("src/routes/users.js", "rb") as f:
+    tree = parser.parse(f.read())
+
+# Query for route patterns: app.get("/path", handler)
+query = Language(tsjs.language()).query("""
+  (call_expression
+    function: (member_expression
+      object: (identifier) @app
+      property: (property_identifier) @method)
+    arguments: (arguments
+      (string) @route_path
+      .
+      (_) @handler))
+""")
+
+matches = query.matches(tree.root_node)
+# → Extracts: GET /api/users, POST /api/users/:id, etc.
+```
+
+**Auto-Generated OpenAPI Spec from Source Code:**
+
+| Tool | Language | How It Works |
+|------|----------|-------------|
+| **FastAPI** (Python) | Python | Native OpenAPI generation from type hints — `GET /docs` |
+| **tsoa** | TypeScript | Decorators → OpenAPI 3.0 at build time |
+| **Springdoc** | Java/Kotlin | Annotations → `/v3/api-docs` at runtime |
+| **swag** | Go | Comments → `swagger.json` |
+| **Flasgger** | Python/Flask | Docstrings → Swagger UI |
+| **Huma** | Go | Type-safe API framework with built-in OpenAPI |
+
+**Language-Specific AST Analyzers (verified — research findings):**
+
+| Language | Tool | Key Capability |
+|----------|------|----------------|
+| **C#** | **Roslyn** (`Microsoft.CodeAnalysis`) | Semantic analysis of `[HttpGet]`, `[Route]` attributes; resolves types across assemblies |
+| **Java** | **JavaParser** + JavaSymbolSolver | AST traversal for `@RequestMapping`, `@GetMapping`; resolves inheritance |
+| **Python** | `ast` module + tree-sitter-python | Decorator and function signature extraction |
+| **TypeScript** | **ts-morph** / tree-sitter-typescript | Full type-aware analysis of Express/NestJS routes |
+| **Go** | `go/ast` + tree-sitter-go | Function call pattern matching for Gin/Echo routes |
+
+**SCIP (Source Code Intelligence Protocol) — Project-Wide Code Graphs (verified — scip-code.org):**
+
+SCIP is a language-agnostic Protobuf schema for serialized code graphs (definitions, references, relationships). Originally developed by Sourcegraph, now community-governed (March 2026).
+
+- **Indexers available:** `scip-typescript`, `scip-java`, `scip-python`, `rust-analyzer`
+- **Enables:** Cross-repository endpoint discovery, AI agent context without live LSP connections
+- **Complementary to LSP:** LSP provides real-time, document-centric queries ("what does this function do?"); SCIP provides pre-computed, project-wide analysis ("who calls this endpoint across all services?")
+- **Integration:** Pre-compute SCIP index on file save / git commit → expose via MCP tools
+
+**LSP as AI Agent Data Provider (2025/2026 evolution):**
+
+LSP has evolved beyond "IDE plugin protocol" to a foundational data provider for AI coding agents. AI assistants (Claude Code, Cursor) now query LSP servers directly:
+
+| LSP Method | Use for API Discovery |
+|------------|----------------------|
+| `textDocument/definition` | Trace route handler to implementation |
+| `textDocument/references` | Find all callers of an API endpoint |
+| `textDocument/publishDiagnostics` | Real-time error/warning feedback |
+| `workspace/symbol` | Project-wide symbol search |
+| `textDocument/documentSymbol` | File structure/outline |
+
+**Project API Manifest Output (auto-generated):**
+```json
+{
+  "project_id": "uuid-v4",
+  "project_path": "D:/projects/my-new-app",
+  "discovered_at": "2026-06-02T21:00:00Z",
+  "tech_stack": {
+    "language": "typescript",
+    "framework": "express",
+    "runtime": "node-20.x",
+    "package_manager": "pnpm"
+  },
+  "api_surface": {
+    "rest_endpoints": [
+      { "method": "GET", "path": "/api/users", "handler": "src/routes/users.ts:14" },
+      { "method": "POST", "path": "/api/users", "handler": "src/routes/users.ts:28" }
+    ],
+    "websocket_channels": ["/ws/notifications"],
+    "grpc_services": [],
+    "graphql_schemas": []
+  },
+  "dependencies": {
+    "direct": 24,
+    "transitive": 187,
+    "vulnerabilities": { "critical": 0, "high": 1, "medium": 3 }
+  },
+  "environment": {
+    "required_vars": ["DATABASE_URL", "REDIS_URL", "JWT_SECRET"],
+    "ports": [3000, 5432]
+  },
+  "communication_patterns": {
+    "outbound_http": ["https://api.stripe.com", "https://api.openai.com/v1"],
+    "message_queues": ["redis://localhost:6379/0"]
+  },
+  "gateway_integration": {
+    "recommended_virtual_key": "sk-app-my-new-app-xxxx",
+    "detected_llm_calls": true,
+    "base_url_rewrite": {
+      "from": "https://api.openai.com/v1",
+      "to": "https://gateway.internal/v1"
+    }
+  }
+}
+```
+
+**How the Gateway Adapts:**
+1. Sentinel scans project → generates manifest
+2. Manifest uploaded to Central Hub
+3. Hub auto-provisions: virtual key, routing rules, budget allocation, monitoring dashboards
+4. Hub sends back integration instructions (`.env` changes, base URL rewrite)
+5. Sentinel applies changes to project config files (with developer approval)
+
+### 14.3 Loop 2 — Health Telemetry & Resource Monitoring
+
+**The Problem:** Your app crashes, or RAM spikes to 99% because of a memory leak in the project code (like the Codex RAM bleeding issue you encountered). These signals are currently lost — no documentation, no root cause, no fix.
+
+**Solution: Multi-Layer Telemetry Collection**
+
+#### Layer 1: Crash & Error Capture (Sentry Integration)
+
+**Sentry SDK** instruments your application at runtime, capturing:
+- Unhandled exceptions with full stack traces
+- Breadcrumbs (user actions / logs leading to the error)
+- Performance data (slow transactions, bottlenecks)
+
+**Sentry AI Autofix (Seer):**
+- Combines stack traces + source code from linked repository
+- Generates root cause analysis and code patches
+- Can open PRs directly via GitHub integration
+
+**Sentry MCP Integration (verified — sentry.io):**
+Cursor IDE and Claude Code can query Sentry issues directly via MCP, enabling agents to:
+- Discover open issues
+- Read stack traces and breadcrumbs
+- Generate targeted fixes within the IDE context
+
+**Local Development: Sentry Spotlight**
+- Runs as a sidecar process
+- Visualizes errors, traces, and logs in real-time
+- No data sent to cloud — fully local-first debugging
+
+```javascript
+// Sentry init with gateway telemetry forwarding
+Sentry.init({
+  dsn: "YOUR_DSN",
+  environment: process.env.NODE_ENV || 'development',
+  integrations: [
+    Sentry.httpIntegration({ tracing: true }),
+    Sentry.expressIntegration(),
+  ],
+  beforeSend(event) {
+    // Forward crash data to Central Hub
+    fetch('https://gateway.internal/telemetry/crash', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${SENTINEL_KEY}` },
+      body: JSON.stringify({
+        project_id: PROJECT_ID,
+        machine_id: MACHINE_ID,
+        event: event
+      })
+    });
+    return event;
+  }
+});
+```
+
+#### Layer 2: System Resource Monitoring (RAM/CPU/GPU)
+
+**The Codex RAM Bleeding Scenario:**
+Your RAM usage hits 99%. The cause is buried in your project code — maybe an unbounded cache, a memory leak in a dependency, or a runaway subprocess.
+
+**Detection Architecture:**
+
+```python
+# Local Sentinel — Resource Monitor (runs every 5 seconds)
+import psutil
+import time
+import json
+
+ALERT_THRESHOLDS = {
+    "ram_percent": 85,       # Alert at 85%, critical at 95%
+    "cpu_percent": 90,
+    "disk_percent": 90,
+    "process_ram_mb": 2048   # Any single process using >2GB
+}
+
+def monitor_resources():
+    mem = psutil.virtual_memory()
+    cpu = psutil.cpu_percent(interval=1)
+
+    # Find top RAM consumers
+    processes = []
+    for proc in psutil.process_iter(['pid', 'name', 'memory_info', 'cpu_percent', 'cmdline']):
+        try:
+            mem_mb = proc.info['memory_info'].rss / (1024 * 1024)
+            processes.append({
+                "pid": proc.info['pid'],
+                "name": proc.info['name'],
+                "ram_mb": round(mem_mb, 1),
+                "cpu_percent": proc.info['cpu_percent'],
+                "cmdline": ' '.join(proc.info['cmdline'] or [])[:200]
+            })
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    # Sort by RAM usage
+    processes.sort(key=lambda x: x['ram_mb'], reverse=True)
+    top_10 = processes[:10]
+
+    # Check thresholds
+    alerts = []
+    if mem.percent > ALERT_THRESHOLDS["ram_percent"]:
+        alerts.append({
+            "type": "HIGH_RAM",
+            "severity": "CRITICAL" if mem.percent > 95 else "WARNING",
+            "value": mem.percent,
+            "top_consumers": top_10,
+            "recommendation": f"Process '{top_10[0]['name']}' using {top_10[0]['ram_mb']}MB — investigate for memory leak"
+        })
+
+    for proc in top_10:
+        if proc['ram_mb'] > ALERT_THRESHOLDS["process_ram_mb"]:
+            alerts.append({
+                "type": "PROCESS_RAM_LEAK",
+                "severity": "WARNING",
+                "process": proc,
+                "recommendation": f"Process {proc['name']} (PID {proc['pid']}) using {proc['ram_mb']}MB — potential memory leak"
+            })
+
+    return {
+        "timestamp": time.time(),
+        "machine_id": MACHINE_ID,
+        "system": {
+            "ram_percent": mem.percent,
+            "ram_used_gb": round(mem.used / (1024**3), 1),
+            "ram_total_gb": round(mem.total / (1024**3), 1),
+            "cpu_percent": cpu,
+        },
+        "top_processes": top_10,
+        "alerts": alerts
+    }
+```
+
+**Memory Leak Detection Tools (verified — research findings):**
+
+| Tool | Language | Capability |
+|------|----------|-----------|
+| **MemLab** (Meta) | JavaScript | Automated CI/CD memory leak detection; compares heap states before/after interactions |
+| **Memray** | Python | Tracks Python + C/C++ extension allocations; can attach to live processes without restart |
+| **Clinic.js** | Node.js | Comprehensive profiling: `clinic heapprofiler` during load testing |
+| **`v8.writeHeapSnapshot()`** | Node.js | Built-in V8 heap snapshot; analyze in Chrome DevTools |
+| **`tracemalloc`** | Python | Built-in baseline memory comparisons |
+| **`objgraph`** | Python | Diagnose why objects are retained (reference cycles, cache bloat) |
+
+**Memray Live Attach (production-safe):**
+```bash
+# Attach to a running Python process without restarting it
+memray attach <PID>
+
+# pytest integration — auto-fail tests exceeding memory limits
+pip install pytest-memray
+# @pytest.mark.limit_memory("100 MB")
+```
+
+**MemLab CI/CD Pipeline Integration:**
+```bash
+npm install -g memlab
+memlab run --scenario ./test-scenario.js --work-dir ./memlab-results
+# Auto-fails pipeline if leaks detected
+```
+
+#### Layer 3: IDE Extension Performance Monitoring
+
+**Built-in VS Code Diagnostics:**
+- `Developer: Show Running Extensions` — CPU/memory per extension
+- `Developer: Show Telemetry` — real-time trace of telemetry events
+
+**OpenTelemetry for Local Development (zero-code instrumentation):**
+
+```bash
+# Node.js — auto-instrument without code changes
+npm install @opentelemetry/api @opentelemetry/auto-instrumentations-node
+node --require '@opentelemetry/auto-instrumentations-node/register' app.js
+
+# Python — auto-instrument without code changes
+pip install opentelemetry-distro opentelemetry-instrumentation
+opentelemetry-bootstrap -a install
+opentelemetry-instrument python app.py
+```
+
+**Environment variables:**
+```bash
+OTEL_TRACES_EXPORTER=otlp
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+OTEL_SERVICE_NAME=my-local-service
+```
+
+**Local Observability Stack (batteries-included):**
+```bash
+# Single container: Logs + Grafana + Tempo + Mimir
+docker run -p 3000:3000 -p 4317:4317 -p 4318:4318 grafana/otel-lgtm
+```
+
+### 14.4 Loop 3 — Self-Healing Pipeline (Diagnose → Document → Fix → Deploy)
+
+**The Problem:** A crash report or RAM alert arrives. Currently, you read the error, debug manually, and fix it yourself. This should be automated.
+
+**Solution: AI-Powered Diagnosis → Documentation → Fix Dispatch**
+
+**The Self-Healing Pipeline:**
+
+```
+1. DETECT    →  Sentinel captures crash / resource anomaly
+                 ↓
+2. REPORT    →  Telemetry sent to Central Hub via MCP
+                 ↓
+3. DIAGNOSE  →  Hub routes to LLM (via GaaS routing engine):
+                 - Stack trace analysis
+                 - Root cause identification
+                 - Cross-reference with known issues
+                 ↓
+4. DOCUMENT  →  Auto-generate structured issue report:
+                 - Title, severity, affected component
+                 - Root cause analysis
+                 - Proposed fix (code diff)
+                 - Related issues / historical patterns
+                 ↓
+5. APPROVE   →  Human reviews fix (configurable: auto-approve for low-risk)
+                 ↓
+6. DISPATCH  →  Fix sent back to IDE via:
+                 - Cursor Cloud Agents API (spawn agent to apply fix)
+                 - VS Code Webhook Bridge (trigger task)
+                 - Direct file write via MCP
+                 ↓
+7. VERIFY    →  Sentinel runs tests, monitors for regression
+                 ↓
+8. PUBLISH   →  If tests pass: commit, version bump, release
+```
+
+#### Auto-Generated Issue Documentation
+
+When the Central Hub receives a crash report, the LLM generates a structured document:
+
+```markdown
+# 🔴 CRASH REPORT: Unhandled TypeError in UserService
+
+**Severity:** CRITICAL | **Detected:** 2026-06-02T21:45:00Z | **Machine:** WORKSTATION-01
+
+## Root Cause Analysis
+The `getUserProfile` function at `src/services/user.ts:47` attempts to
+destructure `response.data.profile` but the API returns `null` when the
+user has no profile set. This is a null-reference crash.
+
+## Stack Trace
+```
+TypeError: Cannot destructure property 'name' of 'response.data.profile'
+    at getUserProfile (src/services/user.ts:47:15)
+    at processRequest (src/handlers/api.ts:112:22)
+    at Layer.handle (node_modules/express/lib/router/layer.js:95:5)
+```
+
+## Proposed Fix
+```diff
+- const { name, email, avatar } = response.data.profile;
++ const { name, email, avatar } = response.data.profile ?? {};
+```
+
+## Impact
+- Affected endpoint: GET /api/users/:id/profile
+- Frequency: 23 occurrences in last 4 hours
+- Users affected: Any user without a profile set
+
+## Historical Pattern
+Similar null-reference crash fixed in commit `a1b2c3d` (2026-05-15)
+in `src/services/team.ts:89`. Consider adding a project-wide
+null-safety lint rule.
+```
+
+#### Cursor Cloud Agents API Integration (verified — cursor.com)
+
+**This is the critical bridge** — Cursor has a Cloud Agents API that allows programmatic agent control:
+
+```python
+# Central Hub dispatches fix to Cursor Cloud Agent
+import requests
+
+CURSOR_API_KEY = os.environ["CURSOR_API_KEY"]
+
+def dispatch_fix_to_cursor(repo_url, branch, issue_doc):
+    """Spawn a Cursor Cloud Agent to apply the fix."""
+    response = requests.post(
+        "https://api.cursor.com/v1/agents",
+        headers={"Authorization": f"Bearer {CURSOR_API_KEY}"},
+        json={
+            "repo": repo_url,
+            "branch": f"fix/{issue_doc['id']}",
+            "task": f"""
+                Apply the following fix to the codebase:
+
+                ## Issue
+                {issue_doc['title']}
+
+                ## Root Cause
+                {issue_doc['root_cause']}
+
+                ## Proposed Fix
+                {issue_doc['proposed_diff']}
+
+                ## Instructions
+                1. Apply the fix
+                2. Run the test suite: `npm test`
+                3. If tests pass, commit with message: "fix: {issue_doc['title']}"
+                4. Create a PR with the issue documentation as the description
+            """
+        }
+    )
+    return response.json()  # Returns agent_id for monitoring
+```
+
+**Cursor Cloud Agents can:**
+- Clone your repo from GitHub
+- Execute tasks autonomously in isolated Ubuntu VMs
+- Run up to 8 parallel agents simultaneously
+- Push changes and generate PRs
+- Notify via email, Slack, or in-editor notification
+
+#### VS Code Webhook Bridge (for non-Cursor environments)
+
+Since VS Code has no native webhook listener, a bridge server is needed:
+
+```typescript
+// bridge-server.ts — runs alongside VS Code
+import express from 'express';
+import * as vscode from 'vscode';
+
+const app = express();
+app.use(express.json());
+
+// Receive fix instructions from Central Hub
+app.post('/apply-fix', (req, res) => {
+  const { file_path, fix_diff, issue_id } = req.body;
+
+  // Open the file in VS Code
+  vscode.commands.executeCommand('vscode.open',
+    vscode.Uri.file(file_path));
+
+  // Apply the diff (via workspace edit)
+  const edit = new vscode.WorkspaceEdit();
+  // ... apply fix_diff to the file
+  vscode.workspace.applyEdit(edit);
+
+  res.json({ status: 'applied', issue_id });
+});
+
+// Receive "run tests" command
+app.post('/run-tests', (req, res) => {
+  vscode.commands.executeCommand(
+    'workbench.action.tasks.runTask', 'Test Suite');
+  res.json({ status: 'triggered' });
+});
+
+app.listen(9091);
+```
+
+### 14.5 MCP Tools for Local Development Intelligence
+
+The Sentinel Agent exposes project health and intelligence as **MCP tools** that any AI agent (Cursor, Claude Code, custom) can discover and use.
+
+**Implementation Framework: FastMCP (verified — gofastmcp.com)**
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("Sentinel Development Intelligence Server")
+
+@mcp.tool
+def scan_project(project_path: str, depth: str = "quick") -> dict:
+    """Scans a local project directory and returns the auto-discovered
+    API surface, tech stack, dependencies, and communication patterns.
+    depth: 'quick' scans manifests only; 'full' runs AST parsing."""
+    # Tree-sitter + SCIP based scanning logic
+    return {"project_id": "...", "api_surface": {...}, "dependencies": {...}}
+
+@mcp.tool
+def get_project_health(project_id: str, include_history: bool = False) -> dict:
+    """Returns current health status: recent crashes, resource usage,
+    dependency vulnerabilities, and quality score."""
+    return {"status": "healthy", "quality_score": 91, ...}
+
+@mcp.resource("resource://project/api-surface")
+def get_api_surface() -> dict:
+    """Live API inventory — auto-updated on file save."""
+    return {...}
+
+@mcp.resource("resource://project/health")
+def get_health_dashboard() -> dict:
+    """Real-time health dashboard data."""
+    return {...}
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+FastMCP auto-generates JSON schemas from type hints and docstrings. Supports Bearer tokens, OAuth 2.1, in-memory testing, and OpenTelemetry integration. Install: `uv pip install fastmcp`
+
+#### `scan_project`
+```json
+{
+  "name": "scan_project",
+  "description": "Scans a local project directory and returns the auto-discovered API surface, tech stack, dependencies, and communication patterns.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "project_path": { "type": "string", "description": "Absolute path to the project root directory." },
+      "depth": { "type": "string", "enum": ["quick", "full"], "default": "quick", "description": "Quick scans manifests only; Full runs AST parsing." }
+    },
+    "required": ["project_path"]
+  }
+}
+```
+
+#### `get_project_health`
+```json
+{
+  "name": "get_project_health",
+  "description": "Returns current health status: recent crashes, resource usage, dependency vulnerabilities, and quality score.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "project_id": { "type": "string" },
+      "include_history": { "type": "boolean", "default": false, "description": "Include last 24h of health history." }
+    },
+    "required": ["project_id"]
+  }
+}
+```
+
+#### `report_issue`
+```json
+{
+  "name": "report_issue",
+  "description": "Reports a crash, error, or resource anomaly to the Central Hub for analysis and fix generation.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "project_id": { "type": "string" },
+      "issue_type": { "type": "string", "enum": ["crash", "memory_leak", "high_cpu", "dependency_vuln", "performance", "other"] },
+      "stack_trace": { "type": "string" },
+      "system_snapshot": {
+        "type": "object",
+        "properties": {
+          "ram_percent": { "type": "number" },
+          "cpu_percent": { "type": "number" },
+          "top_processes": { "type": "array" }
+        }
+      },
+      "context": { "type": "string", "description": "Any additional context (what the developer was doing, recent changes)." }
+    },
+    "required": ["project_id", "issue_type"]
+  }
+}
+```
+
+#### `apply_fix`
+```json
+{
+  "name": "apply_fix",
+  "description": "Applies a code fix to the local project, runs tests, and optionally commits.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "project_id": { "type": "string" },
+      "fix_id": { "type": "string", "description": "ID of the fix from Central Hub." },
+      "auto_commit": { "type": "boolean", "default": false },
+      "run_tests": { "type": "boolean", "default": true }
+    },
+    "required": ["project_id", "fix_id"]
+  }
+}
+```
+
+#### `get_quality_score`
+```json
+{
+  "name": "get_quality_score",
+  "description": "Returns the project's quality score — a composite metric tracking crash frequency, dependency health, test coverage, and resource efficiency over time.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "project_id": { "type": "string" },
+      "period": { "type": "string", "enum": ["24h", "7d", "30d"], "default": "7d" }
+    },
+    "required": ["project_id"]
+  }
+}
+```
+
+### 14.6 Quality Score — Continuous Improvement Metric
+
+Every project gets a **Quality Score (0–100)** that tracks improvement over time:
+
+| Component | Weight | Measurement |
+|-----------|--------|-------------|
+| Crash frequency | 25% | Crashes per 1K requests (target: <0.1%) |
+| Memory stability | 20% | RAM delta over 1 hour (target: <5% growth) |
+| Dependency health | 15% | Zero critical CVEs; <3 high CVEs |
+| Test coverage | 15% | Line coverage >80% |
+| API contract compliance | 15% | OpenAPI validation pass rate |
+| Performance (p95 latency) | 10% | Within 2× of baseline |
+
+**Quality Score Trend (reported to Central Hub):**
+```json
+{
+  "project_id": "my-new-app",
+  "quality_scores": [
+    { "date": "2026-05-26", "score": 62, "issues": ["HIGH_CVE:lodash", "RAM_LEAK:getUserProfile"] },
+    { "date": "2026-06-02", "score": 78, "issues": ["RAM_LEAK:getUserProfile"] },
+    { "date": "2026-06-02T21:00", "score": 91, "issues": [], "note": "RAM leak auto-fixed by self-healing pipeline" }
+  ]
+}
+```
+
+### 14.7 Machine-Specific Issue Tracking
+
+**The Problem:** An app works on your desktop but crashes on your laptop. Or RAM bleeds only on a specific machine. Machine-specific issues need machine-specific tracking.
+
+**Machine Identity Card:**
+```json
+{
+  "machine_id": "WS-COTTBUS-01",
+  "hostname": "QAMAR-WORKSTATION",
+  "os": "Windows 11 Pro 24H2",
+  "ram_gb": 256,
+  "cpu": "AMD Threadripper PRO 7995WX",
+  "gpu": "NVIDIA RTX 6000 Ada",
+  "gpu_vram_gb": 48,
+  "active_ides": ["Cursor 0.52", "VS Code 1.97", "Antigravity"],
+  "registered_projects": 50,
+  "known_issues": [
+    {
+      "id": "ISSUE-2026-0602-RAM",
+      "type": "PROCESS_RAM_LEAK",
+      "process": "codex",
+      "status": "RESOLVED",
+      "root_cause": "Unbounded context window accumulation in project X",
+      "fix": "commit a1b2c3d — added context window pruning"
+    }
+  ]
+}
+```
+
+When an issue is reported, the Central Hub cross-references:
+1. **Same issue on other machines?** → Likely a code problem
+2. **Only on this machine?** → Likely an environment/config problem
+3. **Only with this IDE?** → Likely an IDE extension or integration issue
+
+This creates a **knowledge base** that grows smarter with every issue resolved.
+
+### 14.8 Integration with Existing GaaS Architecture
+
+The Local Development Intelligence Layer connects to the existing gateway architecture:
+
+| GaaS Component | Integration Point |
+|----------------|------------------|
+| **LiteLLM Router** | Sentinel's `report_issue` routes to LLM for root cause analysis (via gateway's own routing engine) |
+| **MCP Server** | Sentinel exposes tools (`scan_project`, `get_project_health`, etc.) on the same MCP transport |
+| **Agent Auth** | Sentinel authenticates via agent API key (`sk-agent-sentinel-xxxx`) |
+| **Budget System** | Analysis LLM calls deducted from project's budget allocation |
+| **Observability** | Sentinel telemetry flows into same Prometheus/Grafana stack |
+| **A2A Protocol** | Central Hub can delegate sub-tasks to specialized repair agents via A2A |
+
+**New Kubernetes Services:**
+```yaml
+- sentinel-hub          (2 replicas; receives telemetry from all workstations)
+- project-scanner       (1 replica; runs AST analysis on submitted project snapshots)
+- fix-dispatcher        (1 replica; manages Cursor Cloud Agent API calls + webhook delivery)
+```
+
+### 14.9 Implementation Roadmap for Track C
+
+| Phase | Timeline | Deliverables |
+|-------|----------|-------------|
+| **C-Alpha** | W3–4 | Local Sentinel Agent (resource monitor + crash capture); psutil-based RAM/CPU monitoring; telemetry upload to Hub |
+| **C-Beta** | W5–6 | Project scanner (tree-sitter AST + manifest analysis); auto-generated Project API Manifest; MCP tools for `scan_project` and `report_issue` |
+| **C-Gamma** | W7–8 | Self-healing pipeline: LLM-powered root cause analysis → auto-documentation → Cursor Cloud Agents API integration for fix dispatch |
+| **C-GA** | W9–10 | Quality Score dashboard; machine-specific issue tracking; historical pattern matching; one-click "heal this project" button |
+
+---
+
+*Research completed June 2, 2026. All data verified via 7 parallel research agents (5 original + 2 for Track C). Sources: NVIDIA GTC 2026, nvidia.com, intercom.com, fin.ai, zendesk.com, finops.org, genai.owasp.org, atlas.mitre.org, nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf, modelcontextprotocol.io, google.github.io/A2A, github.com/BerriAI/litellm, konghq.com, portkey.ai, agentgateway.dev, kgateway.dev, tensorzero.com, getbifrost.ai, openrouter.ai, snyk.io, bitsight.com, cycode.com, truesec.com, wiz.io, paloaltonetworks.com/prisma, opentelemetry.io, registry.modelcontextprotocol.io, c2pa.org, icml.cc 2025, neurips.cc 2024, sentry.io, tree-sitter.github.io, cursor.com, grafana.com, meta/memlab, bloomberg/memray, clinic.js.*
 
 *Assumptions clearly labeled throughout. All numbers cited with sources. No code built — research and blueprint phase only.*
