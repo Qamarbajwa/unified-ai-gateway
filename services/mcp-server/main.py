@@ -1,18 +1,57 @@
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 import os
+import sys
 import httpx
 import logging
+from pathlib import Path
 from pythonjsonlogger import jsonlogger
 
 import uvicorn
 from fastapi import FastAPI, Depends, HTTPException, Header, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from mcp.server.fastapi import create_mcp_server
-from mcp.server import Server
-from mcp.types import Tool, TextContent
 from pydantic import BaseModel, Field
+
+CURRENT_DIR = Path(__file__).resolve().parent
+if str(CURRENT_DIR) not in sys.path:
+    sys.path.insert(0, str(CURRENT_DIR))
+
+from project_registry import load_registry, scan_connected_tools
+
+try:
+    from mcp.server.fastapi import create_mcp_server
+    from mcp.server import Server
+    if not hasattr(Server("compat-check"), "tool"):
+        raise ImportError("Installed MCP Server lacks decorator tool API.")
+except ImportError:
+    class Server:
+        def __init__(self, name: str):
+            self.name = name
+            self.tools: dict[str, Any] = {}
+
+        def tool(self):
+            def decorator(func):
+                self.tools[func.__name__] = func
+                return func
+            return decorator
+
+    def create_mcp_server(server: Server) -> FastAPI:
+        fallback = FastAPI(title=f"{server.name} MCP Compatibility")
+
+        @fallback.get("/tools")
+        async def list_tools():
+            return {
+                "tools": [
+                    {
+                        "name": name,
+                        "description": (func.__doc__ or "").strip(),
+                    }
+                    for name, func in sorted(server.tools.items())
+                ]
+            }
+
+        return fallback
 
 logger = logging.getLogger("mcp-server")
 logger.setLevel(logging.INFO)
@@ -48,10 +87,14 @@ async def get_model_pricing(model_name: str) -> str:
     Example: model_name="deepseek-r1"
     """
     pricing_data = {
-        "gpt-4o": {"input": "$5.00/1M", "output": "$15.00/1M"},
-        "claude-3-5-sonnet": {"input": "$3.00/1M", "output": "$15.00/1M"},
-        "deepseek-r1": {"input": "$0.55/1M", "output": "$2.19/1M"},
-        "gemini-2.5-flash": {"input": "$0.075/1M", "output": "$0.30/1M"},
+        "deepseek-v4-flash": {"input": "$0.14/1M", "output": "$0.28/1M"},
+        "deepseek-v4-pro": {"input": "$0.435/1M", "output": "$0.87/1M"},
+        "gemini-3.5-flash": {"input": "$1.50/1M", "output": "$9.00/1M"},
+        "gpt-5.4": {"input": "$2.50/1M", "output": "$15.00/1M"},
+        "claude-sonnet-4.6": {"input": "$3.00/1M", "output": "$15.00/1M"},
+        "claude-opus-4.8": {"input": "$5.00/1M", "output": "$25.00/1M"},
+        "claude-haiku-4.5": {"input": "$1.00/1M", "output": "$5.00/1M"},
+        "gpt-5.5-instant": {"input": "$5.00/1M", "output": "$30.00/1M"},
     }
     
     if model_name in pricing_data:
@@ -88,13 +131,51 @@ async def route_request(prompt: str, min_latency: bool = False, max_cost_per_m: 
 
     # Mock logic
     if max_cost_per_m and max_cost_per_m < 1.0:
-        selected_model = "gemini-2.5-flash"
+        selected_model = "deepseek-v4-flash"
     elif min_latency:
-        selected_model = "deepseek-r1"
+        selected_model = "deepseek-v4-pro"
     else:
-        selected_model = "gpt-4o"
+        selected_model = "gpt-5.4"
         
     return f"Based on constraints (min_latency={min_latency}, max_cost_per_m={max_cost_per_m}), request routed to: {selected_model}"
+
+
+@mcp_server.tool()
+async def list_connected_tools() -> list[dict[str, Any]]:
+    """List external tool workspaces registered with the unified gateway."""
+    registry = load_registry()
+    return [
+        {
+            "id": tool["id"],
+            "name": tool["name"],
+            "path": tool["path"],
+            "container_path": tool.get("container_path"),
+            "domain": tool.get("domain"),
+            "quality_profile": tool.get("quality_profile"),
+        }
+        for tool in registry["tools"]
+    ]
+
+
+@mcp_server.tool()
+async def audit_connected_tools(persist_snapshot: bool = True) -> dict[str, Any]:
+    """
+    Scan connected workspaces and report manifests, governance, git state, changes, and quality recommendations.
+    Set persist_snapshot=false for a read-only dry run.
+    """
+    return scan_connected_tools(persist=persist_snapshot)
+
+
+@mcp_server.tool()
+async def get_connected_tool_changes() -> dict[str, Any]:
+    """Return only connected tools whose current fingerprint differs from the last saved snapshot."""
+    audit = scan_connected_tools(persist=False)
+    changed = [tool for tool in audit["tools"] if tool["change_status"] != "unchanged"]
+    return {
+        "generated_at": audit["generated_at"],
+        "changed_count": len(changed),
+        "tools": changed,
+    }
 
 
 # --- FastAPI Application ---
@@ -201,10 +282,16 @@ class A2AMessage(BaseModel):
     }
 
 @app.post("/a2a")
-async def a2a_proxy(message: A2AMessage, authorization: str = Header(None)):
+async def a2a_proxy(
+    message: A2AMessage,
+    authorization: str = Header(None),
+    dpop: str = Header(None),
+    actor_chain: str = Header(None),
+):
     """A2A protocol endpoint with OpenTelemetry trace propagation support."""
+    agent_id = await verify_bearer_token(authorization=authorization, dpop=dpop, actor_chain=actor_chain)
     traceparent = message.meta.get("traceparent") if message.meta else None
-    logger.info("Received A2A message", extra={"trace_id": traceparent, "method": message.method})
+    logger.info("Received A2A message", extra={"trace_id": traceparent, "method": message.method, "agent_id": agent_id})
     
     async with httpx.AsyncClient() as client:
         try:
@@ -218,4 +305,3 @@ async def a2a_proxy(message: A2AMessage, authorization: str = Header(None)):
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-

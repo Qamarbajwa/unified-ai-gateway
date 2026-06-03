@@ -1,0 +1,222 @@
+{
+  "generated_at": "2026-06-03T13:25:40+00:00",
+  "registry_version": "1.0",
+  "tool_count": 5,
+  "changed_count": 5,
+  "tools": [
+    {
+      "id": "cad_llm_qbit",
+      "name": "CAD with LLM and Qbit",
+      "configured_path": "D:\\Comfy UI\\cad with llm and qbit",
+      "container_path": "/connected-tools/cad_llm_qbit",
+      "path": "D:\\Comfy UI\\cad with llm and qbit",
+      "domain": "bim_hbim_architecture",
+      "quality_profile": "iso19650_security_desktop_app",
+      "exists": true,
+      "git": {
+        "present": true,
+        "head": "b07c976",
+        "branch": "master",
+        "dirty": true,
+        "status_lines": [
+          "M core/CMakeLists.txt",
+          " M core/ai/AgentCoordinator.cpp",
+          " M llm_implementation.md",
+          " M progress_report.md",
+          " M resources/app_contexts/3d_ai.json",
+          " M resources/app_contexts/aero_ai.json",
+          " M resources/app_contexts/bim_ai.json",
+          " M resources/app_contexts/bolt_ai.json",
+          " M resources/app_contexts/boom_ai.json",
+          " M resources/app_contexts/cad_ai.json",
+          " M resources/app_contexts/dimension_ai.json",
+          " M resources/app_contexts/fab_ai.json",
+          " M resources/app_contexts/flow_ai.json",
+          " M resources/app_contexts/lux_ai.json",
+          " M resources/app_contexts/nucleus_ai.json",
+          " M resources/app_contexts/path_ai.json",
+          " M resources/app_contexts/scale_ai.json",
+          " M resources/app_contexts/site_ai.json",
+          " M resources/app_contexts/vault_ai.json",
+          " M resources/app_contexts/zen_ai.json",
+          " M tests/CMakeLists.txt",
+          "?? .cursorignore",
+          "?? bim_subagent_research.md",
+          "?? core/ai/SafetyPipeline.cpp",
+          "?? core/ai/SafetyPipeline.h",
+          "?? docs/references/app_vision_enhancement_audit_20260603.md",
+          "?? docs/references/bim_ai_implementation_research.md",
+          "?? docs/references/master_industrial_roles_reference.md",
+          "?? docs/references/master_industrial_roles_talos_reference_spec.md",
+          "?? extract_bim_report.py",
+          "?? extract_llm_report.py",
+          "?? generate_bim_doc.py",
+          "?? recreate_llm_report.py",
+          "?? resources/function_catalogs/",
+          "?? scripts/enhance_llm_implementation.py",
+          "?? scripts/generate_talos_catalogs.py",
+          "?? tests/unit/test_safety_pipeline.cpp"
+        ]
+      },
+      "manifests": [
+        "CMakeLists.txt",
+        "vcpkg.json",
+        "README.md",
+        "MASTER_STATUS.md",
+        "progress_report.md"
+      ],
+      "governance": [
+        "AGENTS.md"
+      ],
+      "file_count": 1333,
+      "total_bytes": 615856290,
+      "latest_write_utc": "2026-06-03T13:13:27+00:00",
+      "fingerprint": "6a64af2b17b044b1f9c5b303395b904558ae547e2564dae38f79a3d336d1455c",
+      "change_status": "new",
+      "recommendations": [
+        "Review uncommitted changes before automated fixes are dispatched.",
+        "Keep ISO 19650/DIN checks and geometry/topology validation in the quality gate."
+      ],
+      "tree_digest": "5a29ab40e8290808b68538e8f05e8a588f3fea1b20509399bcad776f44cfe8ee"
+    },
+    {
+      "id": "digital_shopping_helper",
+      "name": "Digital Shopping Helper",
+      "configured_path": "D:\\Comfy UI\\digtal shopping helper",
+      "container_path": "/connected-tools/digital_shopping_helper",
+      "path": "D:\\Comfy UI\\digtal shopping helper",
+      "domain": "commerce_assistant",
+      "quality_profile": "consumer_web_app",
+      "exists": true,
+      "git": {
+        "present": true,
+        "head": null,
+        "branch": null,
+        "dirty": false,
+        "status_lines": []
+      },
+      "manifests": [
+        "README.md"
+      ],
+      "governance": [],
+      "file_count": 3,
+      "total_bytes": 84263,
+      "latest_write_utc": "2026-06-02T16:04:10+00:00",
+      "fingerprint": "8f085ad3ff8c0b30cd53d5f6fbc9a23e8060ae00b0fa7bec370c1fc197bc3b55",
+      "change_status": "new",
+      "recommendations": [
+        "Add synchronized governance instructions so agents inherit this tool's constraints.",
+        "Expose frontend/backend manifests so the gateway can run dependency and test audits."
+      ],
+      "tree_digest": "41b89b7da81faa5aa0962f7f9452039c65755f4dfd373badd948d87240f36e9a"
+    },
+    {
+      "id": "production_of_media",
+      "name": "Production of Media",
+      "configured_path": "D:\\Comfy UI\\production of media",
+      "container_path": "/connected-tools/production_of_media",
+      "path": "D:\\Comfy UI\\production of media",
+      "domain": "media_generation",
+      "quality_profile": "creative_pipeline",
+      "exists": true,
+      "git": {
+        "present": true,
+        "head": null,
+        "branch": null,
+        "dirty": false,
+        "status_lines": []
+      },
+      "manifests": [],
+      "governance": [
+        "AGENTS.md",
+        ".cursorrules",
+        ".roocoderrules",
+        ".harness/harness_state.json"
+      ],
+      "file_count": 24,
+      "total_bytes": 148375,
+      "latest_write_utc": "2026-06-03T13:11:17+00:00",
+      "fingerprint": "234a995b1937b054bfbffc893c8d5c66aa4c7238b3b3c5966ae978b51af80732",
+      "change_status": "new",
+      "recommendations": [
+        "Add a README with run, test, and integration contracts."
+      ],
+      "tree_digest": "7e95932d06e635a4404e88b92416614031b839f169dceb5863929d82db7d8d71"
+    },
+    {
+      "id": "social_media_tool",
+      "name": "Social Media Tool",
+      "configured_path": "D:\\Comfy UI\\social-media-tool",
+      "container_path": "/connected-tools/social_media_tool",
+      "path": "D:\\Comfy UI\\social-media-tool",
+      "domain": "social_media_automation",
+      "quality_profile": "multi_service_web_app",
+      "exists": true,
+      "git": {
+        "present": true,
+        "head": "307fde2",
+        "branch": "master",
+        "dirty": false,
+        "status_lines": []
+      },
+      "manifests": [
+        "package.json",
+        "pnpm-workspace.yaml",
+        "docker-compose.yml",
+        "README.md",
+        "MASTER_STATUS.md",
+        "progress_report.md"
+      ],
+      "governance": [
+        "AGENTS.md",
+        ".cursorrules",
+        ".roocoderrules",
+        ".harness/harness_state.json"
+      ],
+      "file_count": 191,
+      "total_bytes": 668488,
+      "latest_write_utc": "2026-06-03T01:44:53+00:00",
+      "fingerprint": "0ae06be0b3c857fe4861b334d594ca6fff424517c0fe9a63c19159a1b061f9ee",
+      "change_status": "new",
+      "recommendations": [],
+      "tree_digest": "fe485e6ab7f6d5ae5086778fc9c1dc2ac08f2e56755b72dc0dc2cd2ce6004876"
+    },
+    {
+      "id": "health_assistant_med_gemma",
+      "name": "Health Assistant with Med Gemma",
+      "configured_path": "D:\\Comfy UI\\health assistant with med Gemma",
+      "container_path": "/connected-tools/health_assistant_med_gemma",
+      "path": "D:\\Comfy UI\\health assistant with med Gemma",
+      "domain": "health_assistant",
+      "quality_profile": "medical_safety_sensitive",
+      "exists": true,
+      "git": {
+        "present": true,
+        "head": "f653f3f",
+        "branch": "master",
+        "dirty": false,
+        "status_lines": []
+      },
+      "manifests": [
+        "MASTER_STATUS.md",
+        "progress_report.md"
+      ],
+      "governance": [
+        "AGENTS.md",
+        ".cursorrules",
+        ".roocoderrules",
+        ".harness/harness_state.json"
+      ],
+      "file_count": 24,
+      "total_bytes": 191746,
+      "latest_write_utc": "2026-06-03T01:43:02+00:00",
+      "fingerprint": "2a02b73a0df0813713f45e0e09208a908b06d293f6a048f7edfb0d26b7248f00",
+      "change_status": "new",
+      "recommendations": [
+        "Add a README with run, test, and integration contracts.",
+        "Require medical safety checks, PHI handling rules, and human escalation paths."
+      ],
+      "tree_digest": "75a2c01fdcf2b8dc0287d9eaafe2b6f006c68649988d616f27c943fb8f9c62f0"
+    }
+  ]
+}

@@ -42,6 +42,17 @@
     }
   },
   "runtime_evolution_engine": {
+    "connected_tools": {
+      "registry": ".harness/connected_tools.json",
+      "snapshot": ".harness/tool_inventory.json",
+      "audit_script": "scripts/audit_connected_tools.py",
+      "mcp_tools": [
+        "list_connected_tools",
+        "audit_connected_tools",
+        "get_connected_tool_changes"
+      ],
+      "policy": "Observe linked workspaces read-only, persist fingerprints in the unified gateway, and dispatch changes only after quality recommendations are reviewed."
+    },
     "archetype_fingerprinting": {
       "directory": "/apps/",
       "rules": {

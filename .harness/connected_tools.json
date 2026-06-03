@@ -1,0 +1,46 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-06-03",
+  "tools": [
+    {
+      "id": "cad_llm_qbit",
+      "name": "CAD with LLM and Qbit",
+      "path": "D:\\Comfy UI\\cad with llm and qbit",
+      "container_path": "/connected-tools/cad_llm_qbit",
+      "domain": "bim_hbim_architecture",
+      "quality_profile": "iso19650_security_desktop_app"
+    },
+    {
+      "id": "digital_shopping_helper",
+      "name": "Digital Shopping Helper",
+      "path": "D:\\Comfy UI\\digtal shopping helper",
+      "container_path": "/connected-tools/digital_shopping_helper",
+      "domain": "commerce_assistant",
+      "quality_profile": "consumer_web_app"
+    },
+    {
+      "id": "production_of_media",
+      "name": "Production of Media",
+      "path": "D:\\Comfy UI\\production of media",
+      "container_path": "/connected-tools/production_of_media",
+      "domain": "media_generation",
+      "quality_profile": "creative_pipeline"
+    },
+    {
+      "id": "social_media_tool",
+      "name": "Social Media Tool",
+      "path": "D:\\Comfy UI\\social-media-tool",
+      "container_path": "/connected-tools/social_media_tool",
+      "domain": "social_media_automation",
+      "quality_profile": "multi_service_web_app"
+    },
+    {
+      "id": "health_assistant_med_gemma",
+      "name": "Health Assistant with Med Gemma",
+      "path": "D:\\Comfy UI\\health assistant with med Gemma",
+      "container_path": "/connected-tools/health_assistant_med_gemma",
+      "domain": "health_assistant",
+      "quality_profile": "medical_safety_sensitive"
+    }
+  ]
+}

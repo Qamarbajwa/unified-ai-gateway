@@ -136,6 +136,13 @@ async def verify_token(
     if not authorization:
         logger.warning("Missing Authorization header", extra={"event": "auth_failure"})
         raise HTTPException(status_code=401, detail="Missing Authorization header")
+
+    # Reject unsafe delegation depth before any backing-store lookup.
+    if actor_chain:
+        chain = actor_chain.split(",")
+        if len(chain) > 3:
+            logger.warning("Delegation chain exceeds depth", extra={"event": "delegation_blocked", "chain": actor_chain})
+            raise HTTPException(status_code=403, detail="Delegation chain exceeds maximum depth of 3")
     
     # Extract token
     token = authorization.replace("Bearer ", "")
@@ -200,13 +207,6 @@ async def verify_token(
             raise HTTPException(status_code=401, detail="DPoP proof required for key-bound agent")
         logger.info("No DPoP header, proceeding with Bearer authorization", extra={"agent_id": agent_id})
         
-    # 4.5 Delegation chain tracking
-    if actor_chain:
-        chain = actor_chain.split(",")
-        if len(chain) > 3:
-            logger.warning("Delegation chain exceeds depth", extra={"event": "delegation_blocked", "chain": actor_chain})
-            raise HTTPException(status_code=403, detail="Delegation chain exceeds maximum depth of 3")
- 
     logger.info("Agent authenticated successfully", extra={"agent_id": agent_id, "event": "auth_success"})
     return {"status": "valid", "agent_id": agent_id}
 
@@ -247,4 +247,3 @@ async def get_agent_status(agent_id: str):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
-

@@ -856,6 +856,112 @@ To avoid building complex credit card processing, billing reports, invoice gener
 - **Hardware Efficiency Gains:** The deployment of NVIDIA Blackwell Ultra GB200 NVL72 and AMD Instinct MI350 architectures has driven down the cost-per-token of inference by **10×** compared to Hopper-generation GPUs, primarily due to disaggregated prefill/decode engines and FP4/FP6 quantized execution.
 - **Gartner Prediction:** Strategic industry forecasts indicate that AI model inference will become **100× more cost-efficient by 2030** compared to 2022 levels, turning AI gateways into critical routing routers that arbitrage token prices in real time.
 
+### 4.7 Rate Limiting Architecture
+
+The gateway implements a hierarchical, multi-tier rate limiting system to prevent abuse, enforce budgets, and ensure fair resource allocation across both human and agent consumers.
+
+**Hierarchical Limit Tiers:**
+
+| Tier | Scope | Default Limit | Enforcement Point |
+|------|-------|---------------|-------------------|
+| Global | Entire gateway | 10,000 RPS | API Gateway (NGINX/Envoy) |
+| Per-Tenant | Organization / team | 2,000 RPS | LiteLLM proxy |
+| Per-Key | Individual virtual key | 100 RPS burst / 20 RPS sustained | Agent Auth Service (Redis) |
+| Per-Model | Specific provider model | Provider-imposed | LiteLLM provider config |
+| Per-Agent | Individual agent_id | 100 RPS burst / 20 RPS sustained | Agent Auth Service (Redis) |
+
+**Algorithm: Redis Sliding Window Log (Lua Script)**
+
+The gateway uses a sliding window log algorithm implemented as an atomic Redis Lua script. This provides precise rate limiting without the boundary-burst issues of fixed windows.
+
+```lua
+-- rate_limit.lua — Atomic sliding window rate limiter
+local key = KEYS[1]           -- e.g., "ratelimit:sk-agent-xxxx"
+local window = tonumber(ARGV[1])  -- window size in seconds (e.g., 60)
+local limit = tonumber(ARGV[2])   -- max requests in window (e.g., 1200)
+local now = tonumber(ARGV[3])     -- current timestamp in microseconds
+
+-- Remove entries outside the current window
+redis.call('ZREMRANGEBYSCORE', key, 0, now - window * 1000000)
+
+-- Count remaining entries
+local count = redis.call('ZCARD', key)
+
+if count < limit then
+    -- Add current request timestamp
+    redis.call('ZADD', key, now, now .. ':' .. math.random(1000000))
+    redis.call('EXPIRE', key, window * 2)
+    return 0  -- ALLOWED
+else
+    return 1  -- BLOCKED
+end
+```
+
+**Response Headers (RFC 6585 / draft-ietf-httpapi-ratelimit-headers):**
+
+```http
+HTTP/1.1 429 Too Many Requests
+RateLimit-Limit: 1200
+RateLimit-Remaining: 0
+RateLimit-Reset: 45
+Retry-After: 45
+X-RateLimit-Policy: per-key-sliding-window
+```
+
+**Token-Based Rate Limiting:**
+
+In addition to request-count rate limiting, the gateway enforces **token-count rate limiting** — capping the total tokens consumed per key within a time window. This prevents a single agent from monopolizing expensive reasoning models.
+
+| Metric | Free Tier | Pro Tier | Enterprise |
+|--------|----------|---------|------------|
+| Requests/minute | 60 | 600 | Custom |
+| Tokens/minute | 40,000 | 400,000 | Custom |
+| Tokens/day | 1,000,000 | 10,000,000 | Custom |
+| Max concurrent requests | 5 | 50 | Custom |
+
+### 4.8 Data Residency & Geo-Routing
+
+To comply with GDPR Article 5 (data minimization), EU AI Act data sovereignty requirements, and enterprise data residency policies, the gateway implements jurisdiction-aware request routing.
+
+**Geo-Detection Pipeline:**
+
+```
+1. Client IP → MaxMind GeoIP2 database → ISO 3166-1 country code
+2. Country code → Residency Zone mapping:
+   - EU/EEA (27 countries + UK, CH, NO) → Zone: EU
+   - US, CA → Zone: NA
+   - JP, KR, SG, AU → Zone: APAC
+   - All others → Zone: DEFAULT
+3. Zone → Provider endpoint selection
+```
+
+**Provider Endpoint Mapping:**
+
+| Zone | Allowed Providers | Endpoint Region | Rationale |
+|------|------------------|----------------|-----------|
+| EU | Azure OpenAI (EU West), Anthropic (EU), Google Vertex (europe-west4), DeepSeek (self-hosted EU) | EU data centers only | GDPR Article 44–49; Schrems II |
+| NA | All providers (default endpoints) | US regions | No cross-border restriction |
+| APAC | Google Vertex (asia-northeast1), Azure OpenAI (Japan East), DeepSeek | APAC regions | Local data protection laws |
+| DEFAULT | Least-restrictive provider set | Nearest region | Fallback |
+
+**Request Tagging:**
+
+Every request is tagged with residency metadata propagated through the entire pipeline:
+
+```json
+{
+  "_meta": {
+    "residency_zone": "EU",
+    "source_country": "DE",
+    "allowed_providers": ["azure-openai-eu", "anthropic-eu", "vertex-eu"],
+    "denied_providers": ["openai-us", "deepseek-cn"],
+    "policy": "gdpr-strict"
+  }
+}
+```
+
+**Override Mechanism:** Enterprise tenants can define custom residency policies via the admin dashboard or Terraform module, overriding default geo-routing rules.
+
 ---
 
 ## PART 5: RELIABILITY & RESILIENCE — HARNESS OF 30
@@ -1171,6 +1277,137 @@ Redis Streams (xadd/xread) for:
 - **DB backup:** Daily snapshot + continuous WAL archival to S3
 - **Runbook:** Automated incident runbooks triggered by PagerDuty on circuit breaker open
 
+### 8.4 Disaster Recovery Runbook
+
+**Priority 1: Gateway Data Plane Down (RTO < 5 minutes)**
+
+| Step | Action | Command / Procedure | Owner |
+|------|--------|--------------------|---------|
+| 1 | Verify outage scope | `kubectl get pods -n gaas` — check pod status | On-call SRE |
+| 2 | Check provider health | `curl https://gateway.internal/health` — verify upstream connectivity | On-call SRE |
+| 3 | Restart unhealthy pods | `kubectl rollout restart deployment/litellm-proxy -n gaas` | On-call SRE |
+| 4 | Failover to standby | Update DNS (Route53/Cloudflare) to standby region endpoint | On-call SRE |
+| 5 | Verify recovery | Run smoke test suite against standby endpoint | On-call SRE |
+| 6 | Post-incident | Create incident ticket; 24h RCA deadline; update runbook | Engineering Lead |
+
+**Priority 2: Database Recovery (RPO < 1 minute)**
+
+| Step | Action | Procedure |
+|------|--------|-----------|
+| 1 | Detect DB failure | PgBouncer health check fails; Prometheus alert fires |
+| 2 | Promote read-replica | `pg_ctl promote -D /var/lib/postgresql/data` on replica |
+| 3 | Update connection string | Rotate `DATABASE_URL` in Kubernetes secret to point to new primary |
+| 4 | Restart dependent services | Rolling restart of litellm-proxy and agent-auth pods |
+| 5 | Verify WAL gap | Check `pg_last_wal_replay_lsn()` vs. last known primary LSN |
+| 6 | Rebuild replica | Provision new replica from latest base backup + WAL archive |
+
+**Priority 3: Redis Cache Loss**
+
+| Step | Action | Impact |
+|------|--------|--------|
+| 1 | Redis restarts from AOF | Cache rebuilds from append-only file; ~30s recovery |
+| 2 | If AOF corrupted | Cold start; all caches empty; rate limit counters reset |
+| 3 | Impact assessment | Token blacklist temporarily empty — all keys valid until re-synced from Postgres |
+| 4 | Re-sync blacklist | Run `sync_blacklist.py` script to rebuild from auth DB |
+
+### 8.5 Load Testing & Capacity Planning
+
+**Load Testing Framework: k6 + Grafana Cloud k6**
+
+```javascript
+// k6 load test: gateway throughput benchmark
+import http from 'k6/http';
+import { check, sleep } from 'k6';
+
+export const options = {
+  stages: [
+    { duration: '2m', target: 100 },   // Ramp to 100 VUs
+    { duration: '5m', target: 500 },   // Ramp to 500 VUs
+    { duration: '10m', target: 1000 }, // Sustained 1000 VUs
+    { duration: '2m', target: 0 },     // Ramp down
+  ],
+  thresholds: {
+    http_req_duration: ['p(95)<200'],  // p95 < 200ms
+    http_req_failed: ['rate<0.01'],    // <1% error rate
+  },
+};
+
+export default function () {
+  const res = http.post(
+    'https://gateway.internal/v1/chat/completions',
+    JSON.stringify({
+      model: 'deepseek-v4-flash',
+      messages: [{ role: 'user', content: 'Hello' }],
+      max_tokens: 50,
+    }),
+    { headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer sk-load-test-key',
+    }}
+  );
+  check(res, { 'status 200': (r) => r.status === 200 });
+  sleep(0.1);
+}
+```
+
+**Capacity Planning Formula:**
+
+```
+Required Replicas = ceil(
+  (Peak_RPS × Avg_Latency_Seconds × Safety_Factor) / Max_Concurrent_Per_Pod
+)
+
+Example:
+  Peak RPS: 2,000
+  Avg Latency: 0.5s (including provider round-trip)
+  Safety Factor: 1.5
+  Max Concurrent Per Pod: 500 (Python async)
+  
+  Required = ceil((2000 × 0.5 × 1.5) / 500) = ceil(3.0) = 3 replicas
+```
+
+**Target Performance Benchmarks:**
+
+| Metric | Target | Measurement |
+|--------|--------|-------------|
+| Gateway overhead (p95) | < 50ms | Excluding provider latency |
+| Gateway overhead (p99) | < 100ms | Excluding provider latency |
+| Throughput (sustained) | 2,000 RPS | Per 3-replica deployment |
+| Throughput (burst) | 5,000 RPS | 30-second burst capacity |
+| Cache hit latency | < 5ms | Redis exact-match return |
+| Semantic cache latency | < 20ms | Qdrant vector search |
+| Memory per pod | < 512MB | LiteLLM proxy baseline |
+
+### 8.6 API Versioning Strategy
+
+The gateway API follows **URI-path versioning** with a **sunset header deprecation** protocol.
+
+**Versioning Scheme:**
+
+```
+https://gateway.myorg.com/v1/chat/completions   ← Current stable
+https://gateway.myorg.com/v2/chat/completions   ← Next major (breaking changes)
+https://gateway.myorg.com/beta/chat/completions ← Preview (unstable, no SLA)
+```
+
+**Deprecation Protocol (Stripe-inspired):**
+
+1. **Announcement:** 90-day notice via changelog, email, and dashboard banner
+2. **Sunset Header:** All responses include `Sunset: Sat, 01 Mar 2027 00:00:00 GMT` (RFC 8594)
+3. **Deprecation Header:** `Deprecation: true` added to all v1 responses
+4. **Migration Guide:** Published in developer docs with diff examples
+5. **Hard Cutoff:** After sunset date, v1 returns `410 Gone` with migration URL
+
+**Breaking vs. Non-Breaking Changes:**
+
+| Change Type | Example | Versioning |
+|-------------|---------|------------|
+| New optional field in response | Adding `cache_hit: true` | Non-breaking (v1 compatible) |
+| New optional query parameter | Adding `?routing_strategy=` | Non-breaking |
+| Removing a response field | Dropping `provider_id` | Breaking → v2 |
+| Changing error format | New error schema | Breaking → v2 |
+| New required header | Mandatory `X-Request-ID` | Breaking → v2 |
+
 ---
 
 ## PART 9: DEVELOPER ECOSYSTEM & GO‑TO‑MARKET
@@ -1460,6 +1697,53 @@ To guarantee that the GaaS gateway operates as a highly secure, reliable, and pe
     *   Integrate red-teaming frameworks (`garak` and `PyRIT`) directly into the CI/CD deployment pipeline.
     *   Run daily regression testing against the full security suite.
 *   **Verification Gate:** Automated build fails if any security metric (prompt injection block rate, PII leakage rate) declines relative to the previous stable release.
+
+### 12.4 Implementation Status Matrix
+
+This matrix maps each architectural specification to its current implementation state, providing an honest assessment of what is live, what is stubbed, and what is planned.
+
+> ⚠️ **Updated: June 3, 2026.** This matrix is maintained as a living document. Status changes are recorded in `progress_report.md`.
+
+| Specification | VISION.md Part | Status | Implementation Detail |
+|--------------|----------------|--------|----------------------|
+| LiteLLM proxy routing | 2.2 | ✅ Implemented | `docker-compose.yml` service; `litellm-config.yaml` |
+| Semantic cache (Qdrant, 0.90 threshold) | 2.2 | ✅ Implemented | `litellm-config.yaml` cache_params |
+| Exact-match cache (Redis) | 1.2 | ✅ Implemented | Redis service in docker-compose |
+| MCP Server (tool discovery) | 6.1 | ✅ Implemented | `services/mcp-server/main.py` (Python/FastMCP) |
+| A2A endpoint | 6.2 | ✅ Stub | `/a2a` POST endpoint; forward routing placeholder |
+| Agent Card (`/.well-known/agent.json`) | 6.2 | ✅ Implemented | Static file served by MCP server |
+| Agent Auth (registration, key issuance) | 3.2 | ✅ Implemented | `services/agent-auth/main.py` |
+| DPoP key-binding validation | 3.2 | ✅ Implemented | JWK thumbprint + DPoP proof in agent-auth |
+| Delegation chain tracking (max depth 3) | 3.2 | ✅ Implemented | `actor-chain` header parsing in agent-auth |
+| Loop detection (cosine >0.95, 5 req/60s) | 6.3 | ✅ Implemented | `/auth/check-loop` endpoint with Redis counter |
+| OAuth 2.1 + PKCE authorization code flow | 3.2 | 🔲 Planned | Bearer tokens only; full OAuth 2.1 flow deferred to Phase 4 |
+| SPIFFE workload identity | 3.2 | 🔲 Planned | UUID v4 agent IDs; SPIFFE integration deferred |
+| Prometheus metrics | 7.1 | ✅ Implemented | `prometheus.yml` scraping LiteLLM |
+| Grafana dashboards | 7.1 | ✅ Implemented | Grafana service in docker-compose |
+| OpenTelemetry collector | 7.3 | ⬜ Config Only | `otel-collector-config.yaml` exists; service not in docker-compose |
+| Developer Portal | 9.1 | ✅ Implemented | `services/portal/` static mount; Scalar OpenAPI |
+| C2PA response provenance | 3.4 | 🔲 Planned | Deferred to post-EU AI Act deadline (Dec 2, 2026) |
+| 10 FOCUS fields per request | 1.2 | 🔲 Planned | Audit log schema pending |
+| PII/PHI redaction middleware | 3.1 | 🔲 Planned | Phase 6 deliverable |
+| Prompt injection detection | 3.1 | 🔲 Planned | Phase 6 deliverable (Llama-Guard-3) |
+| Kyverno admission control | 3.3 | ✅ Implemented | `kubernetes/kyverno-policies.yaml` |
+| Helm chart | 8.1 | 📝 Skeleton | `kubernetes/helm/` directory exists |
+| Stripe billing integration | 4.5 | 🔲 Planned | Phase 4 deliverable |
+| OpenMeter usage metering | 4.5 | 🔲 Planned | Phase 4 deliverable |
+| Clerk/Auth0 IDaaS | 3.5 | 🔲 Planned | Phase 4 deliverable |
+| SheerID student verification | 3.5 | 🔲 Planned | Phase 4 deliverable |
+| Sentinel Hub (Track C) | 14.1 | 🔲 Planned | Track C Alpha |
+| Project Scanner (Track C) | 14.2 | 🔲 Planned | Track C Beta |
+| Fix Dispatcher (Track C) | 14.4 | 🔲 Planned | Track C Gamma |
+| Agentgateway (Rust) for MCP | 2.2 | ⚠️ Diverged | VISION specifies Rust agentgateway; current impl is Python/FastMCP. Decision: Python stub for Alpha/Beta; evaluate Rust migration for production scale |
+
+**Legend:**
+- ✅ Implemented — Live and functional in current codebase
+- ✅ Stub — Endpoint exists with placeholder/mock logic
+- 📝 Skeleton — Directory/file structure created; implementation pending
+- ⬜ Config Only — Configuration file exists; service not deployed
+- 🔲 Planned — Documented in VISION.md; implementation not started
+- ⚠️ Diverged — Implementation differs from specification (intentional phasing)
 
 ---
 
@@ -2389,6 +2673,130 @@ To establish a long-term defensible position in the highly competitive AI infras
 ### 16.5 Moat 5: Self-Healing Telemetry-to-IDE Feedback Loop
 - **The Competitor Weakness:** Performance errors or runtime crashes require manual investigation, ticket creation, and developer triage.
 - **Our Moat:** When a model fails or a code execution crashes, the gateway streams the context directly to the local IDE. An AI repair agent analyzes the stack trace, draft-fixes the source code, runs unit tests, and presents a visual diff directly inside the developer's Workspace (Cursor or VS Code), turning API telemetry into self-healing software cycles.
+
+---
+
+## PART 17: DEVELOPMENT GOVERNANCE & MULTI-IDE SYNCHRONIZATION (SOVEREIGN FACTORY HARNESS VER 30.0)
+
+### 17.1 The Problem: Multi-Agent IDE Drift
+
+This project is developed simultaneously across three AI-assisted IDEs, each powered by a different LLM:
+
+| IDE | Primary Model | Config File |
+|-----|--------------|-------------|
+| **Cursor** | Codex / Claude Sonnet | `.cursorrules` |
+| **Antigravity** | Gemini 3.5 Flash | `AGENTS.md` |
+| **VS Code (Roo Code)** | DeepSeek-R1 / V3 | `.roocoderrules` |
+
+**The drift problem:** Each IDE agent maintains its own context window, instructions, and behavioral rules. Without synchronization, Agent A in Cursor may enforce different coding standards than Agent B in VS Code, leading to inconsistent code style, conflicting architectural decisions, and duplicated or contradictory governance files.
+
+### 17.2 Solution: The Sovereign Factory Harness
+
+The project implements a **centralized governance harness** that enforces identical behavioral rules across all three IDE agents through a single source of truth.
+
+**Architecture:**
+
+```
+┌─────────────────────────────────────────────────────┐
+│              .harness/harness_state.json             │
+│         (Single Source of Truth — JSON Schema)       │
+└────────┬──────────────────┬──────────────────┬───────┘
+         │                  │                  │
+    ┌────▼────┐       ┌─────▼─────┐      ┌─────▼──────┐
+    │.cursor- │       │ AGENTS.md │      │.roocode-   │
+    │ rules   │       │           │      │ rrules     │
+    └────┬────┘       └─────┬─────┘      └─────┬──────┘
+         │                  │                  │
+    ┌────▼────┐       ┌─────▼─────┐      ┌─────▼──────┐
+    │ Cursor  │       │Antigravity│      │  VS Code   │
+    │ IDE     │       │  Engine   │      │ (Roo Code) │
+    └─────────┘       └───────────┘      └────────────┘
+```
+
+**Triple-Lock Synchronization Protocol:**
+1. All rule changes are first written to `/.harness/harness_state.json`
+2. The three IDE config files (`.cursorrules`, `AGENTS.md`, `.roocoderrules`) are then regenerated with **identical content** from the harness state
+3. On agent wakeup, each IDE agent reads its config file and verifies it matches the harness state hash
+
+### 17.3 The 29-Pillar Rule Matrix
+
+The harness enforces a structured set of behavioral pillars that govern all AI agent actions:
+
+| Pillar | Domain | Rule |
+|--------|--------|------|
+| 0 | Strategy | Phase Zero Consultation before any coding begins |
+| 1 | Discovery | Recursive mapping of all `/apps` directories |
+| 5-6 | Continuity | Read `progress_report.md` on start; write Reasoning Trace on end |
+| 7 | Code Quality | Surgical edits only — line-by-line modifications, never mass overwrites |
+| 8-9 | Performance | 256GB RAM profiling; Hardware Abstraction Layer for 5-platform parity |
+| 12-13 | Security | Post-Quantum Cryptography (ML-KEM); hardware-locked TPM/Enclave |
+| 14 | IP Protection | Non-Free/Anti-Training headers in every source file |
+| 15 | Compliance | ISO 19650 / DIN EN industry standards verification |
+| 16 | Ghost Protocol | Scrub ALL AI metadata, tags, and commentary before writing to disk |
+| 17 | Escalation | Ambiguous logic triggers a 'Decision Briefing' pause |
+| 19 | Telemetry | Continuous status and metrics updates |
+| 21-23 | UI/UX | ISO 7000 symbol research; Contextual Toolbar deployment |
+| 24 | Performance | Local Intelligence Vault for <5ms retrieval |
+| 25 | Spatial | IND Spatial-Transformer: 21-point 60fps coordinate ingestion |
+| 26 | LLM Routing | Broker routes tasks to optimal model (DeepSeek for logic, Claude for UI) |
+| 27 | Naming | Semantic identity — Sovereign names for all new projects |
+| 28 | Initialization | Auto-generate governance files on first wake-up |
+| 29 | Assimilation | Retroactive discovery, merge, and sync of legacy rules |
+
+### 17.4 Immutable Laws (The Core Shield)
+
+Five rules that can never be overridden by any pillar or runtime evolution:
+
+1. **Surgical Execution Only** — Mass file overwrites are forbidden under all circumstances
+2. **Ghost Protocol** — AI-generated metadata must be scrubbed before every disk write
+3. **Sentinel Security** — Post-Quantum Cryptography (ML-KEM) + AES-256 + TPM binding on all compiled outputs
+4. **Spatial Intent Engagement** — IND engine maintains readiness for 21-point hand tracking at 60fps
+5. **LLM Broker Routing** — Complex algorithmic tasks route to DeepSeek-R1; visual/UI tasks route to Claude
+
+### 17.5 harness_state.json Schema
+
+The centralized state file uses a structured JSON schema:
+
+```json
+{
+  "harness_version": "30.0",
+  "identity": {
+    "role": "string — Orchestrator identity",
+    "workstation": "string — Hardware profile",
+    "nodes": {
+      "<IDE_NAME>": {
+        "model": "string — Primary LLM",
+        "rule_file": "string — Config file path"
+      }
+    }
+  },
+  "immutable_laws": { "<law_name>": { "description": "string" } },
+  "pillars_of_execution": { "pillar_<N>": "string — Rule description" },
+  "runtime_evolution_engine": {
+    "archetype_fingerprinting": { "directory": "string", "rules": {} },
+    "autonomous_refactoring_triggers": {}
+  },
+  "execution_modes": { "options": ["SINGULAR", "SWARM", "CHAIN-REACTION"] },
+  "status_metadata": {
+    "harness_lock": "string — Version lock",
+    "ghost_protocol_status": "ENGAGED | DISABLED",
+    "evaluatory_loop": "ARMED | STANDBY"
+  }
+}
+```
+
+### 17.6 Runtime Evolution Engine
+
+The harness is not static — it evolves autonomously based on runtime signals:
+
+**Archetype Fingerprinting:** The engine scans `/apps/` directories and adjusts rules based on detected codebase type:
+- BIM/Architecture projects → enforce ISO 19650, topology checking
+- Graphics/Simulation projects → enforce GPU VRAM management, sub-16ms frames
+- Backend/Pipeline projects → enforce zero-dependency structures, memory leak checks
+
+**Friction Elimination:** If a compilation or logic failure repeats twice under any LLM model, the harness writes an absolute negative constraint rule to `harness_state.json`, permanently forbidding that code pattern from being generated again.
+
+**Model Handover:** When tasks transfer between IDEs (e.g., Cursor → VS Code), the harness parses `progress_report.md` notes to adjust reasoning depth configuration for the receiving model.
 
 ---
 
