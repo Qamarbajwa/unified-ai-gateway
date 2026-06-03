@@ -706,6 +706,7 @@ To avoid building complex credit card processing, billing reports, invoice gener
 1. **Payment Security & Wallet (Stripe Customer Balance / Prepaid Credits):**
    - **No card data stored locally:** All credit card inputs, banking APIs, fraud prevention (Stripe Radar), and regional compliance (SCA, 3D Secure 2, PCI-DSS) are offloaded to **Stripe Hosted Customer Portal**.
    - **Customer Balance Wallet:** Users purchase pre-paid credits. Stripe manages the balance wallet, customer tax logic, and multi-currency transactions securely.
+   - **Bank-Specific Verification & 3D Secure 2.0 (3DS2):** Every credit card charge or invoice payment is subjected to 3DS2. If a customer's bank requires step-up verification (e.g., verifying the purchase in their banking app, entering an SMS one-time passcode, or biometric authorization), Stripe dynamically prompts them with an interactive authorization modal, ensuring compliance with banking security rules and preventing fraudulent chargebacks.
 2. **High-Frequency Usage Metering (OpenMeter / Lago):**
    - Since token counts are updated at the millisecond scale (inbound/outgoing per request), the gateway streams raw consumption metrics (`tokens_in`, `tokens_out`, `model`, `project_id`) directly to **OpenMeter**.
    - OpenMeter acts as a highly scalable usage broker, aggregating events to prevent API rate-limit starvation on Stripe.
@@ -719,6 +720,12 @@ To avoid building complex credit card processing, billing reports, invoice gener
 4. **Transparent Token Usage Reports & Invoicing:**
    - Instead of building custom billing dashboards, the gateway embeds the **Stripe Billing Customer Portal** directly into our Developer UI.
    - Developers log in to see detailed metered statements, retrieve official receipts/invoices, check remaining balance, update payment methods, and configure auto-recharges.
+5. **Two-Step Verification & Bank-Specific Fraud Security (SCA/PSD2 Compliance):**
+   - **Strong Customer Authentication (SCA):** To guard against fraudulent transactions, two-step verification is enforced on all operations that modify financial state (adding funds, changing payment methods, configuring auto-recharges).
+   - **Stripe Radar & ML Fraud Scoring:** Every transaction is evaluated against a machine learning risk score (analyzing 100+ metadata parameters such as IP velocity, device fingerprints, card country vs. IP location).
+   - **Exemption & Step-up Validation Rules:** The gateway enforces rules set by individual card networks (Visa Secure, Mastercard Identity Check) and issuing banks:
+     - High-risk transactions (> $50 or unusual location velocity) automatically trigger bank-specific 3D Secure challenges.
+     - Payments flagged as suspicious by bank auth codes (e.g., card verification values or address checks) are immediately routed to a secure billing challenge flow or blocked, mitigating fraud risks completely.
 
 ---
 
