@@ -1,0 +1,14 @@
+# Intent: Unified AI Gateway as a Service (GaaS)
+
+This workspace is dedicated to building the **Unified AI Gateway as a Service (GaaS)**, a dual-track architecture for Human Ops & Autonomous Agents, now extended with a self-healing Local Development Intelligence Layer (Track C).
+
+## Directives
+- **Zero code changes** to existing client applications.
+- **Surgical Execution**: precise, line-by-line file edits; mass overwrites are forbidden.
+- **Ghost Protocol**: scrub all AI metadata, generation tags, and agent commentary before writing to disk.
+- **Triple-Lock Sync**: keep `.cursorrules`, `AGENTS.md`, and `.roocoderrules` perfectly synchronized.
+
+## Target Architecture
+- **Track A (Human Ops)**: Budget management, failover routing, semantic caching, observability.
+- **Track B (Autonomous Agents)**: Model Context Protocol (MCP) server, scoped API keys, delegation chain tracking, loop prevention.
+- **Track C (Local Development)**: Auto-discovery via AST/tree-sitter/SCIP/LSP, crash telemetry via Sentry MCP, resource monitoring, self-healing code fixes.
