@@ -257,6 +257,128 @@ App B (Virtual Key: sk-app-b-yyyy)
 | Governance | Anthropic → Linux Foundation | Google → Linux Foundation |
 | Our gateway uses it for | Exposing capabilities to agents | Forwarding tasks to sub-agents |
 
+### 2.5 API Route Flows & Sequence Diagrams
+
+To ensure rapid debugging, monitoring, and instant system comprehension, the core API workflows are mapped below using visual sequence diagrams.
+
+#### 2.5.1 Identity Provisioning & Student Verification Flow
+Shows how a user registers, goes through vendor-managed identity verification, performs student verification, and secures a scoped virtual API key linked to a discounted pre-paid Stripe wallet.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Human User / Student
+    participant IAM as "Clerk / Auth0 (IDaaS)"
+    participant Verification as SheerID API
+    participant Portal as Developer Portal
+    participant Gateway as GaaS Gateway
+    participant Stripe as "Stripe Billing / Wallet"
+    
+    User->{IAM}: 1. Sign Up / Log In
+    {IAM}-->>User: 2. Identity Token & Session Verified
+    User->>Portal: 3. Access Portal with ID Token
+    Portal->>Verification: 4. Request Student Verification (Name, School)
+    Verification-->>User: 5. Prompt for school credentials / ID upload
+    User->>Verification: 6. Submit student verification data
+    Verification->>Verification: 7. Validate with registrar database
+    Verification-->>Portal: 8. Cryptographically signed student claim
+    Portal->>Gateway: 9. Register account with student claim
+    Gateway->>Stripe: 10. Provision Stripe Customer with Student Discount
+    Stripe-->>Gateway: 11. Customer wallet provisioned (Student Tier)
+    Gateway-->>User: 12. Virtual API Key generated (sk-student-xxxx)
+```
+
+#### 2.5.2 Standard Request & Caching/Routing Pipeline
+Visualizes the execution path of a standard API call under Track A, showing key checkups, double-cache evaluations (exact-match and semantic), and cost aggregation.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant App as Client Application
+    participant Gateway as GaaS AI Gateway (LiteLLM)
+    participant Redis as "Redis (Exact Cache & Key Blacklist)"
+    participant Qdrant as "Qdrant (Semantic Cache)"
+    participant Stripe as "Stripe (Balance & Quota)"
+    participant LLM as "Provider LLM (DeepSeek / Gemini)"
+    participant DB as "Postgres (FOCUS Audit Log)"
+
+    App->>Gateway: 1. POST /v1/chat/completions (with Virtual Key)
+    Gateway->>Redis: 2. Check virtual key validity & blacklist status
+    Redis-->>Gateway: 3. Key is valid, linked Stripe Customer ID returned
+    Gateway->>Stripe: 4. Verify customer has prepaid balance > $0
+    Stripe-->>Gateway: 5. Quota verified (Balance active)
+    Gateway->>Redis: 6. Check exact-match cache (Hash of prompt)
+    alt Exact Match Found
+        Redis-->>Gateway: 7a. Cached response payload
+        Gateway-->>App: 7b. Return cached response (0ms cost, low latency)
+    else Cache Miss
+        Redis-->>Gateway: 8. Cache miss
+        Gateway->>Qdrant: 9. Fetch semantic embeddings & query cosine similarity
+        alt Semantic Match (similarity > 0.90)
+            Qdrant-->>Gateway: 10a. Semantic cached response
+            Gateway-->>App: 10b. Return cached response (cached value)
+        else Cache Miss
+            Qdrant-->>Gateway: 11. Cache miss
+            Gateway->>LLM: 12. Forward request to optimal provider
+            LLM-->>Gateway: 13. Streamed / complete response
+            Gateway->>Redis: 14. Save prompt hash & output (Exact Cache)
+            Gateway->>Qdrant: 15. Embed prompt & save response (Semantic Cache)
+            Gateway->>Gateway: 16. Extract token usage and cost
+            Gateway->>DB: 17. Save 10 FOCUS fields audit log (Async)
+            Gateway-->>App: 18. Return final response
+        end
+    end
+```
+
+#### 2.5.3 MCP Tool Discovery & Invocation Flow (Track B)
+Depicts how an autonomous AI coding assistant queries the agentgateway's exposed tools and calls them to assess runtime parameters.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Agent as AI Coding Agent (Cursor / Claude Code)
+    participant MCP as "agentgateway (Rust MCP Server)"
+    participant GaaS as GaaS Central Hub
+    
+    Agent->>MCP: 1. JSON-RPC (tools/list)
+    MCP-->>Agent: 2. List tools: [list_providers, route_request, get_health, get_budget_status]
+    Agent->>MCP: 3. JSON-RPC (tools/call: get_budget_status)
+    MCP->>GaaS: 4. Fetch budget metrics for Agent key
+    GaaS-->>MCP: 5. Return daily limit, consumed tokens, remaining balance
+    MCP-->>Agent: 6. Return tool call response payload
+```
+
+#### 2.5.4 Self-Healing Telemetry & Auto-Fix Flow (Track C)
+Details the closed-loop recovery sequence when resource alerts or stack traces are emitted by a development environment.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Workstation as Workstation / App Runner
+    participant Monitor as "Sentinel Agent (psutil + Sentry Spotlight)"
+    participant Hub as Central GaaS Sentinel Hub
+    participant LLM as Diagnoser LLM (via GaaS Router)
+    participant IDE as "Developer IDE (Cursor / VS Code Webhook)"
+
+    Workstation->>Monitor: 1. Crash event / RAM usage > 95%
+    Monitor->>Monitor: 2. Capture stack trace & top-10 memory processes
+    Monitor->>Hub: 3. Upload telemetry payload via report_issue tool
+    Hub->>Hub: 4. Parse stack trace and cross-reference history
+    Hub->>LLM: 5. Request root cause analysis & code fix (git diff)
+    LLM-->>Hub: 6. Structured bug report & proposed fix diff
+    Hub->>IDE: 7. Dispatch proposed fix via Cursor API or VS Code Webhook
+    IDE-->>IDE: 8. Prompt developer with visual diff preview
+    opt Developer Approves
+        IDE->>Workstation: 9. Apply patch to file
+        IDE->>Workstation: 10. Execute test suite (npm test / pytest)
+        alt Tests Pass
+            IDE->>Hub: 11a. Report test success & auto-commit to git
+        else Tests Fail
+            IDE->>Hub: 11b. Report test failure & rollback patch
+        end
+    end
+```
+
 ---
 
 ## PART 3: SECURITY ARCHITECTURE
@@ -451,6 +573,24 @@ Client receives response + provenance header
 - **Prohibited Uses:** Denial-of-wallet attacks, guardrail circumvention, scalping, impersonation
 - **Model Extraction Ban:** Using gateway responses to train a competing routing engine is grounds for termination and legal action; responses contain cryptographic watermarks
 - **Termination:** Gateway can suspend any agent that violates policies or exceeds budgets within 60 seconds of detection
+
+### 3.5 Vendor-Managed Identity (IDaaS) & Student Verification
+
+To ensure reliable, secure, and compliance-hardened user account lifecycle administration, the gateway delegates core human user identities, Multi-Tenant authentication, multi-factor verification, and student validation to market-leading external vendors.
+
+#### 3.5.1 Identity as a Service (IDaaS) via Clerk or Auth0
+*   **Decoupled Authentication:** The gateway does not store user passwords, credentials, or sessions. All login, registration, password recovery, MFA, and OAuth SSO flows are offloaded to **Clerk** or **Auth0**.
+*   **Session Verification:** Users authenticate directly with the vendor portal. The app developer portal receives a JWT (JSON Web Token) with standard claims, which the gateway validates at the API layer using the vendor's JWKS (JSON Web Key Set) public keys.
+*   **Unified Credential Directory:** Clerk/Auth0 synchronizes user profiles and roles, facilitating SSO and seamless login verification across the different local/cloud applications of the gateway's ecosystem.
+
+#### 3.5.2 Student Status Verification via SheerID
+*   **Verification Outsourcing:** Student discounts and educational tier verifications are offloaded to **SheerID** or **Proxi.id**. These platforms instantly cross-reference academic registrar databases or securely process school ID cards and transcripts.
+*   **Student Promo Provisioning Flow:**
+    1.  The student initiates verification within the Developer Portal.
+    2.  SheerID verifies their enrollment status.
+    3.  SheerID emits a cryptographically signed verification payload (webhook).
+    4.  The Developer Portal receives the payload and adds the `student_discount` metadata flag to the user's account DB.
+    5.  The portal automatically assigns the user's Stripe Prepaid Wallet customer ID to a **Stripe Student Discount Coupon** (e.g., 50% discount on overhead fees), adjusting billing parameters at the source.
 
 ---
 
