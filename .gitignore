@@ -21,3 +21,7 @@ dist/
 *.njsproj
 *.sln
 *.swp
+
+# Harness history
+.harness/history/
+.harness/events/

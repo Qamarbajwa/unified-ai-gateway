@@ -1,72 +1,13 @@
 {
-  "harness_version": "30.0",
-  "identity": {
-    "role": "Sovereign Factory Meta-Orchestrator",
-    "workstation": "256GB RAM Workstation",
-    "nodes": {
-      "Cursor": {
-        "model": "Codex/Sonnet",
-        "rule_file": ".cursorrules"
-      },
-      "Antigravity": {
-        "model": "Gemini/Gemini 3.5 Flash",
-        "rule_file": "AGENTS.md"
-      },
-      "VS Code": {
-        "model": "DeepSeek-R1/V3",
-        "rule_file": ".roocoderrules"
-      }
-    }
-  },
-  "context": {
+  "version": "33.0",
+  "last_audit_iso": "2026-06-03 19:26:40.731877",
+  "legacy_artifacts": {
     "heritage_bim_and_architecture": {
       "location": "Cottbus, DE",
       "domain_standards": "ISO 19650 / DIN EN"
     }
   },
-  "immutable_laws": {
-    "surgical_execution_only": {
-      "description": "Mass file overwrites are completely forbidden. Inject code via precise, line-by-line surgical edits to preserve a clean 'Human Signature'."
-    },
-    "ghost_protocol": {
-      "description": "Autonomously scrub all AI metadata, generation tags, and agent commentary before writing changes to disk."
-    },
-    "sentinel_security": {
-      "description": "Every app compilation must deploy hybrid Post-Quantum Cryptography (ML-KEM) and hardware-locked AES-256 binary protection bound to the device's local TPM or Secure Enclave."
-    },
-    "spatial_intent_engagement": {
-      "description": "Keep the Interactive Neural Dynamics (IND) engine primed for 21-point hand landmark coordinate tracking streams at 60fps for real-time spatial transformations."
-    },
-    "llm_broker_routing": {
-      "description": "Route complex algorithmic architecture and math to DeepSeek-R1 (Local or API), and visual user interfaces or iconography generation to Claude 3.5."
-    }
-  },
-  "runtime_evolution_engine": {
-    "connected_tools": {
-      "registry": ".harness/connected_tools.json",
-      "snapshot": ".harness/tool_inventory.json",
-      "audit_script": "scripts/audit_connected_tools.py",
-      "mcp_tools": [
-        "list_connected_tools",
-        "audit_connected_tools",
-        "get_connected_tool_changes"
-      ],
-      "policy": "Observe linked workspaces read-only, persist fingerprints in the unified gateway, and dispatch changes only after quality recommendations are reviewed."
-    },
-    "archetype_fingerprinting": {
-      "directory": "/apps/",
-      "rules": {
-        "BIM_HBIM_Architecture": "Auto-enforce ISO 19650/DIN compliance, rigorous topology checking, and property palette UI structures.",
-        "Graphic_Engines_Simulations": "Auto-enforce optimized GPU VRAM memory management, multi-platform HAL routines, and sub-16ms render frames.",
-        "Pure_Logic_Backend_Pipelines": "Enforce zero-dependency structures, automated memory boundary leaks check, and algorithmic unit-testing verification."
-      }
-    },
-    "autonomous_refactoring_triggers": {
-      "friction_elimination": "If a compilation or logical failure repeats twice under any LLM model, write an absolute negative constraint rule forbidding that specific structure from being generated again.",
-      "model_handover_adaptations": "When moving tasks between Codex and DeepSeek, parse the appended notes in progress_report.md to change your reasoning depth configuration."
-    }
-  },
-  "pillars_of_execution": {
+  "active_rules": {
     "pillar_0": "Conduct Phase Zero Consultation before coding.",
     "pillar_1": "Recursive Discovery: Map every /apps folder into /.harness/project_graph.json.",
     "pillar_5_6": "Read progress_report.md before starting; write Reasoning Trace before ending. Pillar 6 (DeepSeek Handover) is MANDATORY at turn-end.",
@@ -86,23 +27,7 @@
     "pillar_28": "Initialization: Scan the root. If missing, auto-generate /.harness/, intent.mdc, MASTER_STATUS.md, and progress_report.md.",
     "pillar_29": "Retroactive Assimilation & Evaluation Protocol: Discover & salvaging legacy files, merge rules to harness_state.json, and triple-lock sync IDE rule files."
   },
-  "execution_modes": {
-    "options": [
-      "SINGULAR",
-      "SWARM",
-      "CHAIN-REACTION"
-    ],
-    "command_loop": [
-      "1. Scan MASTER_STATUS.md.",
-      "2. Execute highest priority app in CHAIN-REACTION mode.",
-      "3. Perform Surgical Edits and Ghost Protocol Scrub.",
-      "4. Update Telemetry (Pillar 19)."
-    ]
-  },
-  "status_metadata": {
-    "harness_lock": "VER 30.0",
-    "ghost_protocol_status": "ENGAGED",
-    "evaluatory_loop": "ARMED",
-    "legacy_data_preservation": "ACTIVE"
-  }
+  "negative_constraints": [],
+  "handover_chain": [],
+  "model_fingerprint_cache": {}
 }
