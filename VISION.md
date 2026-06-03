@@ -514,6 +514,45 @@ Global Budget (monthly)
 **Hybrid Pricing (Unified Token Economy):**
 Agent calls can be paid from the authorizing human user's token balance. When a human authorizes an agent via OAuth, the agent draws from the human's credit pool — providing a seamless "pay once, delegate to agent" experience.
 
+### 4.5 Delegated Wallet, Billing, & Security via Stripe & OpenMeter
+
+To avoid building complex credit card processing, billing reports, invoice generation, and financial security mechanisms from scratch, the GaaS gateway delegates all monetary, user wallet, payment security, and billing interface functions to **industry-leading payment and usage-metering platforms (Stripe and OpenMeter)**. 
+
+#### 4.5.1 Architecture of Delegated Billing & Security
+
+```
+ ┌──────────────────────┐        1. Token usage event        ┌─────────────────────┐
+ │  Local GaaS Gateway  ├───────────────────────────────────►│  OpenMeter Broker   │
+ └──────────┬───────────┘                                    └──────────┬──────────┘
+            ▲                                                           │
+            │ 3. Key suspension webhook                                 │ 2. Aggregate
+            │    (Zero balance / Limit hit)                             │    usage
+            │                                                           ▼
+ ┌──────────┴──────────┐        4. Add balance / Portal      ┌─────────────────────┐
+ │ Gateway Auth DB     │◄────────────────────────────────────┤   Stripe Billing    │
+ │ (Virtual Keys Status)│                                     │   (Prepaid Wallet)  │
+ └─────────────────────┘                                     └─────────────────────┘
+```
+
+#### 4.5.2 Key Integrations & Responsibilities
+
+1. **Payment Security & Wallet (Stripe Customer Balance / Prepaid Credits):**
+   - **No card data stored locally:** All credit card inputs, banking APIs, fraud prevention (Stripe Radar), and regional compliance (SCA, 3D Secure 2, PCI-DSS) are offloaded to **Stripe Hosted Customer Portal**.
+   - **Customer Balance Wallet:** Users purchase pre-paid credits. Stripe manages the balance wallet, customer tax logic, and multi-currency transactions securely.
+2. **High-Frequency Usage Metering (OpenMeter / Lago):**
+   - Since token counts are updated at the millisecond scale (inbound/outgoing per request), the gateway streams raw consumption metrics (`tokens_in`, `tokens_out`, `model`, `project_id`) directly to **OpenMeter**.
+   - OpenMeter acts as a highly scalable usage broker, aggregating events to prevent API rate-limit starvation on Stripe.
+   - OpenMeter routes the consolidated billing events to Stripe periodically.
+3. **Automated Quota & Key Suspension Enforcement (Closed-Loop webhooks):**
+   - Stripe tracks the customer's balance against their metered token cost in real time.
+   - **Webhook Hook:** When a customer's wallet balance hits $0 or their monthly spend exceeds their soft/hard limit:
+     1. Stripe fires a `customer.subscription.updated` or a custom balance warning webhook to the central `Sentinel Hub` / Gateway controller.
+     2. The Gateway immediately updates the auth status in Redis, marking all virtual keys (`sk-agent-xxxx`) linked to that customer as `suspended`.
+     3. Subsequent API calls from that user's projects or agents are blocked instantly with a `429 Billing Limit Exceeded` response, preventing "Denial of Wallet" exploits.
+4. **Transparent Token Usage Reports & Invoicing:**
+   - Instead of building custom billing dashboards, the gateway embeds the **Stripe Billing Customer Portal** directly into our Developer UI.
+   - Developers log in to see detailed metered statements, retrieve official receipts/invoices, check remaining balance, update payment methods, and configure auto-recharges.
+
 ---
 
 ## PART 5: RELIABILITY & RESILIENCE — HARNESS OF 30
