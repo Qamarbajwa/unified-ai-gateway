@@ -1,0 +1,23 @@
+# Environment variables
+.env
+
+# Python caching & testing
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node.js (if any)
+node_modules/
+dist/
+.next/
+
+# IDE files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp

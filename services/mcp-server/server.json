@@ -1,0 +1,14 @@
+{
+  "name": "gaas-unified-mcp",
+  "version": "1.0.0",
+  "description": "Unified Gateway as a Service MCP Server",
+  "author": "GaaS Admin",
+  "transport": "sse",
+  "repository": "https://github.com/Qamarbajwa/unified-ai-gateway",
+  "tools": [
+    "route_request",
+    "get_budget_status",
+    "get_health",
+    "get_model_pricing"
+  ]
+}

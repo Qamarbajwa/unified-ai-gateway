@@ -11,6 +11,10 @@ model_list:
     litellm_params:
       model: deepseek/deepseek-reasoner
       api_key: os.environ/DEEPSEEK_API_KEY
+  - model_name: gemini-2.5-flash
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
 
 router_settings:
   routing_strategy: latency-based-routing
@@ -19,6 +23,17 @@ router_settings:
   redis_host: os.environ/REDIS_HOST
   redis_port: os.environ/REDIS_PORT
   redis_password: os.environ/REDIS_PASSWORD
+  fallbacks: [{"deepseek/deepseek-reasoner": ["gemini/gemini-2.5-flash", "openai/gpt-4o"]}]
+
+litellm_settings:
+  cache: true
+  cache_params:
+    type: qdrant
+    qdrant_api_base: "http://qdrant:6333"
+    qdrant_collection_name: "semantic_cache"
+    similarity_threshold: 0.90
+  success_callback: ["prometheus"]
+  failure_callback: ["prometheus"]
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

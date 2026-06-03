@@ -1,0 +1,48 @@
+replicaCount: 3
+
+image:
+  repository: ghcr.io/berriai/litellm
+  pullPolicy: IfNotPresent
+  tag: "v1.87.0"
+
+service:
+  type: ClusterIP
+  port: 4000
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+env:
+  LITELLM_MASTER_KEY: "change-me"
+  REDIS_HOST: "gaas-gateway-redis-master"
+  REDIS_PORT: "6379"
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+# Persistence settings for subcharts
+postgresql:
+  primary:
+    persistence:
+      enabled: true
+      size: 100Gi
+
+redis:
+  master:
+    persistence:
+      enabled: true
+      size: 50Gi
+
+qdrant:
+  persistence:
+    enabled: true
+    size: 200Gi

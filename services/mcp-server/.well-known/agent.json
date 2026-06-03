@@ -1,0 +1,16 @@
+{
+  "$schema": "https://google.github.io/A2A/agent.schema.json",
+  "agent_id": "gaas-unified-gateway",
+  "name": "Unified GaaS Gateway Agent",
+  "description": "Orchestrates API routing, budget management, and agent tool execution.",
+  "endpoints": {
+    "a2a": "https://gateway.internal/a2a",
+    "mcp": "https://gateway.internal/mcp"
+  },
+  "capabilities": [
+    "route_request",
+    "get_budget_status",
+    "get_health",
+    "get_model_pricing"
+  ]
+}

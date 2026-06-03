@@ -1,0 +1,44 @@
+openapi: 3.1.0
+info:
+  title: GaaS AI Gateway API
+  version: 1.0.0
+  description: Unified AI Gateway for humans and autonomous agents.
+servers:
+  - url: https://gateway.internal/v1
+    description: Production Environment
+  - url: https://sandbox.gateway.internal/v1
+    description: Sandbox Environment
+components:
+  securitySchemes:
+    VirtualKey:
+      type: http
+      scheme: bearer
+      description: Your GaaS Virtual API Key
+paths:
+  /chat/completions:
+    post:
+      summary: Create chat completion
+      security:
+        - VirtualKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model:
+                  type: string
+                  example: "smart-agent-route"
+                messages:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      role:
+                        type: string
+                      content:
+                        type: string
+      responses:
+        '200':
+          description: Successful response
